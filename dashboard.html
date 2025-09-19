@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="DashboardStyles.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Comfortaa&family=Montserrat&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+</head>
+<body class="dashboard-body">
+    <nav class="dashboard-navbar">
+        <div class="navbar-left">DASHBOARD</div>
+        <div class="navbar-right">
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-content">
+        <h1 class="dashboard-heading">Email Monitoring Application</h1>
+
+        <div class="filter-form">
+            <!-- Button to Add/Remove Email IDs -->
+            <button id="addRemoveEmailBtn" class="add-remove-btn">Add/Remove Email IDs</button>
+            
+            <!-- Dropdown List for Emails (Initially Empty) -->
+            <select id="emailSelect" multiple>
+                <!-- <option value="info@travelandtourworld.com">info@travelandtourworld.com</option>
+                <option value="kaushik@travelandtourworld.com">kaushik@travelandtourworld.com</option>
+                <option value="pr@travelandtourworld.com">pr@travelandtourworld.com</option>
+                <option value="marketing@travelandtourworld.com">marketing@travelandtourworld.com</option>
+                <option value="vp@travelandtourworld.com">vp@travelandtourworld.com</option> -->
+            </select>
+
+            <!-- Date Inputs and Other Buttons -->
+            <input type="date" id="startDate" />
+            <input type="date" id="endDate" />
+            <button onclick="addRecord()">Search</button>
+            <button onclick="exportToCSV()">Export to CSV</button>
+        </div>
+
+        <div class="table-container">
+            <table class="table" id="mailTable">
+                <thead>
+                    <tr>
+                        <th>SL No.</th>
+                        <th>Email ID</th>
+                        <th>Date</th>
+                        <th>Sent</th>
+                        <th>Received</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+            <div id="pagination" class="pagination-container"></div>
+        </div>
+    </div>
+
+    <div id="spinner" class="spinner-container" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    <script>
+        // Initialize Choices.js for the email dropdown
+        const emailSelect = document.getElementById("emailSelect");
+        let choices = new Choices(emailSelect, {
+            removeItemButton: true,  // Allow removing emails
+            shouldSort: false,
+            placeholderValue: 'Select email IDs',
+            searchPlaceholderValue: 'Search emails...',
+            searchEnabled: true,  // Enable the search box in the dropdown
+        });
+
+        // Function for logging out
+        function logout() {
+            window.location.href = "admin.html";
+        }
+
+        let serial = 1;
+        let allRows = [];
+        let currentPage = 1;
+        const rowsPerPage = 10;
+
+        // Function to add records
+        async function addRecord() {
+            document.getElementById("tableBody").innerHTML = "";
+            document.getElementById("pagination").innerHTML = "";
+            allRows = [];
+            serial = 1;
+            currentPage = 1;
+
+            const selectedEmails = Array.from(emailSelect.selectedOptions).map(option => option.value);
+            const startDate = document.getElementById("startDate").value;
+            const endDate = document.getElementById("endDate").value;
+
+            if (selectedEmails.length === 0 || !startDate || !endDate) {
+                alert("Please select at least one Gmail ID and enter both dates.");
+                return;
+            }
+
+            // Show the spinner while fetching
+            document.getElementById("spinner").style.display = "block"; // Show spinner
+
+            try {
+                for (let email of selectedEmails) {
+                    const response = await fetch(
+                        `http://localhost:5000/dashboard?start=${startDate}&end=${endDate}&email=${encodeURIComponent(email)}`,
+                        {
+                            method: 'GET',
+                            credentials: 'include'
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (data.error) {
+                        alert(data.error);
+                        continue;
+                    }
+
+                    const { sent, received } = data;
+
+                    const row = document.createElement("tr");
+                    row.innerHTML = `
+                        <td>${serial}</td>
+                        <td>${email}</td>
+                        <td>${startDate} to ${endDate}</td>
+                        <td class="sent-count" data-email="${email}" data-start="${startDate}" data-end="${endDate}">${sent}</td>
+                        <td>${received}</td>
+                        <td class="status">Logged In</td>  <!-- Show status beside email -->
+                    `;
+
+                    allRows.push(row);
+                    serial++;
+                }
+
+                renderTablePage(currentPage);
+                renderPagination();
+                choices.removeActiveItems();
+                document.getElementById("startDate").value = "";
+                document.getElementById("endDate").value = "";
+
+            } catch (err) {
+                console.error(err);
+                alert("Failed to fetch data from Gmail API.");
+            } finally {
+                document.getElementById("spinner").style.display = "none"; // Hide spinner
+            }
+        }
+
+        // Handle click on sent mail count
+        document.getElementById('tableBody').addEventListener('click', async function(e) {
+            if (e.target && e.target.classList.contains('sent-count')) {
+                const email = e.target.getAttribute('data-email');
+                const start = e.target.getAttribute('data-start');
+                const end = e.target.getAttribute('data-end');
+                const row = e.target.closest('tr');  // Get the row element
+
+                // Check if the details row already exists
+                const detailsRow = row.nextElementSibling;  // The row immediately below
+
+                // If the details row exists and is visible, hide it; otherwise, fetch and show the details
+                if (detailsRow && detailsRow.classList.contains('sent-details-row')) {
+                    detailsRow.classList.toggle('hidden');  // Toggle visibility of the details
+                } else {
+                    // Fetch and display sent email details
+                    const response = await fetch(
+                        `http://localhost:5000/sent_details?email=${encodeURIComponent(email)}&start=${start}&end=${end}`,
+                        {
+                            method: 'GET',
+                            credentials: 'include'
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (data.email_details) {
+                        // Create a new table row with email details
+                        const newDetailsRow = document.createElement("tr");
+                        newDetailsRow.classList.add('sent-details-row');
+                        newDetailsRow.innerHTML = `
+                            <td colspan="6">  <!-- Adjusted to colspan=6 for new 'Status' column -->
+                                <table class="sent-details-table">
+                                    <thead>
+                                        <tr>
+                                            <th>To Whom</th>
+                                            <th>Subject</th>
+                                            <th>Date</th>
+                                            <th>Time</th>
+                                            <th>Message</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${data.email_details.map(detail => `
+                                            <tr>
+                                                <td>${detail.to}</td>
+                                                <td>${detail.subject}</td>
+                                                <td>${new Date(detail.date).toLocaleDateString()}</td>
+                                                <td>${new Date(detail.date).toLocaleTimeString()}</td>
+                                                <td class="message">${detail.message}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </td>
+                        `;
+
+                        // Insert the details row below the clicked row
+                        row.after(newDetailsRow);
+                    }
+                }
+            }
+        });
+
+        // Handle click on Add/Remove Email Button
+        document.getElementById('addRemoveEmailBtn').addEventListener('click', function() {
+            const action = prompt("Would you like to add or remove an email? Type 'add' or 'remove':");
+
+            if (action === 'add') {
+                const emailToAdd = prompt("Enter the email to add:");
+                if (emailToAdd && !isEmailAlreadyAdded(emailToAdd)) {  // Prevent duplicates
+                    const newOption = document.createElement("option");
+                    newOption.value = emailToAdd;
+                    newOption.text = emailToAdd;
+                    document.getElementById("emailSelect").appendChild(newOption);
+                    // Save to localStorage
+                    saveEmailsToLocalStorage();
+                    // Reinitialize Choices.js after adding a new email
+                    reinitializeChoices();
+                    alert(`Added ${emailToAdd} successfully!`);
+                } else {
+                    alert("Invalid email or email already exists.");
+                }
+            } else if (action === 'remove') {
+                const emailToRemove = prompt("Enter the email to remove:");
+                const options = document.getElementById("emailSelect").options;
+                let emailRemoved = false;
+                for (let i = 0; i < options.length; i++) {
+                    if (options[i].value === emailToRemove) {
+                        document.getElementById("emailSelect").removeChild(options[i]);
+                        emailRemoved = true;
+                        break;
+                    }
+                }
+                if (emailRemoved) {
+                    // Save to localStorage after removal
+                    saveEmailsToLocalStorage();
+                    // Reinitialize Choices.js after removing an email
+                    reinitializeChoices();
+                    alert(`Removed ${emailToRemove} successfully!`);
+                } else {
+                    alert("Email not found.");
+                }
+            }
+        });
+
+        // Check if the email is already added in the dropdown
+        function isEmailAlreadyAdded(email) {
+            const options = document.getElementById("emailSelect").options;
+            for (let i = 0; i < options.length; i++) {
+                if (options[i].value === email) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Save emails to localStorage
+        function saveEmailsToLocalStorage() {
+            const emailSelect = document.getElementById("emailSelect");
+            const emails = [];
+            for (let i = 0; i < emailSelect.options.length; i++) {
+                emails.push(emailSelect.options[i].value);
+            }
+            localStorage.setItem('emailIds', JSON.stringify(emails));
+
+            // Send the updated list of email IDs to the server
+            fetch('/save_emails_to_file', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ emails: emails }),  // Send the emails as a JSON body
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Emails successfully saved to file:', data);
+            })
+            .catch(error => {
+                console.error('Error saving emails to file:', error);
+            });
+        }
+
+        // Load emails from localStorage
+        function loadEmailsFromLocalStorage() {
+            const emails = JSON.parse(localStorage.getItem('emailIds'));
+            if (emails && Array.isArray(emails)) {
+                emails.forEach(email => {
+                    const newOption = document.createElement("option");
+                    newOption.value = email;
+                    newOption.text = email;
+                    document.getElementById("emailSelect").appendChild(newOption);
+                });
+            }
+            // Reinitialize Choices.js after loading emails from localStorage
+            reinitializeChoices();
+        }
+
+        // Reinitialize Choices.js to reflect the added/removed emails
+        function reinitializeChoices() {
+            choices.destroy();  // Destroy the existing instance
+            choices = new Choices(emailSelect, {  // Reinitialize Choices.js
+                removeItemButton: true,
+                shouldSort: false,
+                placeholderValue: 'Select email IDs',
+                searchPlaceholderValue: 'Search emails...',
+                searchEnabled: true,  // Enable the search box in the dropdown
+            });
+        }
+
+        // Load emails from localStorage on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadEmailsFromLocalStorage();
+        });
+
+        // Function for pagination
+        function renderTablePage(page) {
+            const tableBody = document.getElementById("tableBody");
+            tableBody.innerHTML = "";
+
+            const startIndex = (page - 1) * rowsPerPage;
+            const endIndex = Math.min(startIndex + rowsPerPage, allRows.length);
+
+            for (let i = startIndex; i < endIndex; i++) {
+                tableBody.appendChild(allRows[i]);
+            }
+        }
+
+        // Function for pagination controls
+        function renderPagination() {
+            const totalPages = Math.ceil(allRows.length / rowsPerPage);
+            const pagination = document.getElementById("pagination");
+            pagination.innerHTML = "";
+
+            if (totalPages <= 1) return;
+
+            const createButton = (text, pageNum) => {
+                const btn = document.createElement("button");
+                btn.textContent = text;
+                btn.onclick = () => {
+                    currentPage = pageNum;
+                    renderTablePage(currentPage);
+                    renderPagination();
+                };
+                return btn;
+            };
+
+            if (currentPage > 1) {
+                pagination.appendChild(createButton("« Prev", currentPage - 1));
+            }
+
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = createButton(i, i);
+                if (i === currentPage) {
+                    btn.style.fontWeight = "bold";
+                    btn.style.backgroundColor = "#6c63ff";
+                }
+                pagination.appendChild(btn);
+            }
+
+            if (currentPage < totalPages) {
+                pagination.appendChild(createButton("Next »", currentPage + 1));
+            }
+        }
+
+        // Function to export to CSV
+        function exportToCSV() {
+            if (allRows.length === 0) {
+                alert("No data to export!");
+                return;
+            }
+
+            let csv = "SL No.,Email ID,Date,Sent,Received,Status\n";
+
+            allRows.forEach(tr => {
+                const cells = tr.querySelectorAll("td");
+                const rowData = Array.from(cells).map(td => {
+                    const val = td.innerText.replace(/"/g, '""');
+                    return /,|\n|"/.test(val) ? `"${val}"` : val;
+                }).join(",");
+                csv += rowData + "\n";
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "email_monitoring_data.csv";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>

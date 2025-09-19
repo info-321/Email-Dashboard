@@ -1,0 +1,41 @@
+<html>
+    <head>
+        <title>Admin Dashboard</title>
+        <link rel="stylesheet" href="styles.css"/>
+    </head>
+    <body>
+        <div class="login-container">
+            <form class="login-form" onsubmit="return validateLogin(event)">
+                <h2>Admin Login</h2>
+                <div class="input-group">
+                    <input type="text" id="username" required placeholder=" "/>
+                    <label for="username">username</label>
+                </div>
+                <div class="input-group">
+                    <input type="password" id="password" required placeholder=""/>
+                    <label for="password">password</label>
+                </div>
+                <button type="submit">Login</button>
+                <p id="error-message"></p>
+            </form>
+        </div>
+        <script>
+            function validateLogin(e){
+                e.preventDefault();
+                const username = document.getElementById("username").value;
+                const password = document.getElementById("password").value;
+                const error = document.getElementById("error-message");
+
+                if (username==="admin" && password==="admin"){
+                    window.location.href = "dashboard.html";
+                    // alert("Login Successful");
+                    return true;
+                }else{
+                    error.textContent = "Invalid Credentials. Try Again.";
+                    return false;
+                }
+                
+            }
+        </script>
+    </body>
+</html>

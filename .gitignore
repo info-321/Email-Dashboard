@@ -1,0 +1,5 @@
+# Ignore sensitive files
+workspace_service_account.json
+*.pyc
+__pycache__/
+.env
